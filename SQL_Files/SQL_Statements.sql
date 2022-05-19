@@ -1,6 +1,6 @@
-/*Creating the tables*/
+/*Creating the schools table with proper columns and datatypes*/
 create table fproject.public.schools (
-"CDSCode" varchar
+"CDSCode" varchar			--- primary key
 ,"NCESDist" varchar
 ,"NCESSchool" varchar
 ,"StatusType" varchar
@@ -10,7 +10,7 @@ create table fproject.public.schools (
 ,"Street" varchar
 ,"StreetAbr" varchar
 ,"City" varchar
-,"Zip" varchar
+,"Zip" varchar				--- foreign key for california income zip code data
 ,"State" varchar
 ,"MailStreet" varchar
 ,"MailStrAbr" varchar
@@ -50,8 +50,18 @@ create table fproject.public.schools (
 ,"AdmEmail3" varchar
 ,"LastUpdate" date
 );
+
+/*Creating the calizipincome table which we the populate with the census data*/
+create table fproject.public.calizipincome (
+"Zip" int,			--primary key
+"median_income" int,
+"mean_income" int
+);
+
+
+/*Creating the sat_scores table with proper columns and datatypes*/
 create table fproject.public.sat_scores (
-"cds" varchar,
+"cds" varchar,    		--primary key
 "rtype" varchar,
 "sname" varchar,
 "dname" varchar,
@@ -64,8 +74,9 @@ create table fproject.public.sat_scores (
 "NumGE1500" int,
 "PctGE1500" double precision
 );
+/*Creating the frpm table with proper columns and datatypes*/
 create table fproject.public.frpm (
- "CDSCode" varchar
+ "CDSCode" varchar              --- primary key
 ,"Academic Year" varchar
 ,"County Code" varchar
 ,"District Code" int
@@ -96,25 +107,41 @@ create table fproject.public.frpm (
 ,"2013-14 CALPADS Fall 1 Certification Status" smallint
 );
 
-/*Checking if our idea of column concat works*/
+
+
+
+
+
+
+
+
+/*
+We want to combine the columns county, district, and school code
+so that we can create a column CDScode which apppears in the other
+two tables
+
+Checking if our idea of column concat works
+*/
 select ("County Code" || "District Code" || "School Code") as cds
 from fproject.public.frpm
 
 /*Fixng fprm table to have 1 concat column for CDS*/
 update fproject.public.frpm set "CDSCode" = ("County Code" || "District Code" || "School Code")
-/*Fixing column names*/
 
-/*Changing column name to match that of the other two tables*/
+/*
+Fixing column names
+
+Changing column name to match that of the other two tables
+*/
 alter table fproject.public.sat_scores
 rename column "cds" to "CDSCode"
 
-create table fproject.public.calizipincome (
-"Zip" int,
-"median_income" int,
-"mean_income" int
-);
 
-/*Investigating for primary key*/
+
+/*Investigating for primary key
+
+We compare the count of CDSCode with the count distinct to check its cardinality
+*/
 select count (*) from fproject.public.frpm; -- 10,393
 select count (*) from fproject.public.sat_scores; -- 2331
 select count (*) from fproject.public.schools; --- 5000
@@ -124,12 +151,21 @@ select count (distinct "CDSCode") from fproject.public.frpm; -- 10,393
 select count (distinct "CDSCode") from fproject.public.sat_scores; -- 2,331
 select count (distinct "CDSCode") from fproject.public.schools; -- 5000
 
-/*Adding primary keys to the table*/
+/*
+
+Since the count of the CDSCode column = count distinct for each table it
+can qualify for the role of primary key
+
+Adding primary keys to the table*/
 ALTER TABLE fproject.public.frpm ADD PRIMARY KEY ("CDSCode");
 ALTER TABLE fproject.public.sat_scores ADD PRIMARY KEY ("CDSCode");
 ALTER TABLE fproject.public.schools ADD PRIMARY KEY ("CDSCode");
 
-/*Checking cardinality of the relationship between tables*/
+/*
+This was mainly for our own knowledge and exploration of the data set
+
+Checking cardinality of the relationship between tables
+*/
 select count(*) from (select "CDSCode" from fproject.public.frpm except select "CDSCode" from fproject.public.sat_scores) as result;-- 9,293
 select count(*) from (select "CDSCode" from fproject.public.frpm except select "CDSCode" from fproject.public.schools) as result;-- 9,097
 
@@ -186,6 +222,14 @@ select count(*) from(
 -- drop type if exists _stats_agg_result_type;
 -- drop type if exists _stats_agg_accum_type;
 
+/*
+Explanation of what is happening here. Since we are using someone elses code to help us
+compute statistical measurements, we would like to describe their function in our own words
+*/
+
+/*
+Here we declare the types for each of the statistical measurements
+*/
 create type _stats_agg_accum_type AS (
 	n bigint,
 	min double precision,
@@ -196,6 +240,9 @@ create type _stats_agg_accum_type AS (
 	m4 double precision
 );
 
+/*
+Here we define the names of the statistical measurements and their types
+*/
 create type _stats_agg_result_type AS (
 	count bigint,
 	min double precision,
@@ -206,6 +253,11 @@ create type _stats_agg_result_type AS (
 	kurtosis double precision
 );
 
+/*
+The stats_agg_accumulator function is defining variables that are used to iterate through each row as it calculates the various statistical metrics i.e. moments 1-4, max and the min
+
+Calculations performed over the column row by row
+*/
 create or replace function _stats_agg_accumulator(_stats_agg_accum_type, double precision)
 returns _stats_agg_accum_type AS '
 DECLARE
@@ -237,6 +289,9 @@ END;
 '
 language plpgsql;
 
+/*
+Dealing with edges cases that could break the math because of division by 0 or null values
+*/
 create or replace function _stats_agg_finalizer(_stats_agg_accum_type)
 returns _stats_agg_result_type AS '
 BEGIN
@@ -253,6 +308,9 @@ END;
 '
 language plpgsql;
 
+/*
+Creates the accumulator with the type and then finalizes the results
+*/
 create aggregate stats_agg(double precision) (
 	sfunc = _stats_agg_accumulator,
 	stype = _stats_agg_accum_type,
@@ -261,7 +319,9 @@ create aggregate stats_agg(double precision) (
 );
 
 
-/*calculates count, min, max, mean, variance, skewness and kurtosis*/
+/*Using our statistical functions to compute:
+count, min, max, mean, variance, skewness and kurtosis
+*/
 
 /*schools column stats*/
 select stats_agg("Latitude") from fproject.public.schools s
@@ -322,7 +382,14 @@ select stats_agg("FRPM Count (Ages 5-17)") from fproject.public.frpm f
 select stats_agg("Percent (%) Eligible FRPM (Ages 5-17)") from fproject.public.frpm f
 --- count: 10,178  min: 0.002   max: 1  mean: 0.610  variance: 0.081  skewness: -0.496  kurtosis: 1.993
 
-/*Cleaning up our tables*/
+
+/*
+Now that we have everything in order it is time to clean our data set and alter it.
+This includes but is not limited to, removing nulls,replacing nulls, creating new columns
+and so on
+
+Cleaning up our tables
+*/
 select count(*) from fproject.public.frpm f where "Low Grade" not like '9' --8654
 delete from fproject.public.frpm f where "Low Grade" not like '9';
 
@@ -333,13 +400,24 @@ select count (*) from fproject.public.frpm f where "Low Grade" like '9'; --1732
 select count (*) from fproject.public.frpm f where "High Grade" like '12'; --1732
 
 
+/*Checking for null school, county, district names
 
+Null values came in groups (all nulls appeared in the same rows)
+This can be shown by removing null sname values resulted in the others also
+going to 0
+*/
 select count(*) from fproject.public.sat_scores ss where "sname" = '' -- 578
 delete from sat_scores ss where sname = ''
 select count(*) from fproject.public.sat_scores ss2 where "sname" = ''--0
 select count(*) from fproject.public.sat_scores ss where "cname" = '' --0
 select count(*) from fproject.public.sat_scores ss where "dname" = '' --0
 
+/*Checking for null sat Sat_Scores
+
+The same logic above applies. Inititally all 3 columns contained 499 nulls. Removing nulls
+from one of the columns resulted in the others going to 0. This means that the null
+values present were part of the same rows
+*/
 select count(*) from fproject.public.sat_scores ss  where "AvgScrMath" is null -- 499
 select count(*) from fproject.public.sat_scores ss  where "AvgScrRead" is null -- 499
 select count(*) from fproject.public.sat_scores ss  where "AvgScrWrite" is null -- 499
@@ -354,6 +432,12 @@ select count (*) from fproject.public.frpm; -- 10,393 to 1732
 select count (*) from fproject.public.sat_scores; -- 2331 to 1254
 
 
+/*
+We also need to check for null zip codes since this will be the link between the calizipincome
+table and the others.
+
+Checking for null zip codes
+*/
 delete from fproject.public.schools where "Zip" like ''--94
 select substring("Zip",1,5) from fproject.public.schools s; --4906
 select * from fproject.public.schools
@@ -362,25 +446,30 @@ update fproject.public.schools s SET "Zip" = substring("Zip",1,5)
 select "Zip" from fproject.public.schools --4096
 
 
-create table fproject.public.calizipincome (
-"Zip" int,
-"median_income" int,
-"mean_income" int
-);
-
+/*Ensuring that our zip code is of the same data type as present in the other tables*/
 alter table fproject.public.calizipincome alter column "Zip" type varchar using "Zip"::varchar; -- Now varchar instead of int
 
---Sat_Scores is parent table and then left join frpm on cdscode, left join schools on cdscode, inner join calizipincome on zip
+/*
+Joining the tables to see the resulting data that we have
+
+Sat_Scores is parent table and then left join frpm on cdscode,
+left join schools on cdscode, inner join calizipincome on zip*/
 select *
-from fproject.public.sat_scores ss
+from fproject.public.sat_scores ss --1254
 left join fproject.public.frpm f
-on ss."CDSCode" = f."CDSCode"
-left join fproject.public.schools s
-on ss."CDSCode" = s."CDSCode"
+on ss."CDSCode" = f."CDSCode"      --1254
+left join fproject.public.schools s 
+on ss."CDSCode" = s."CDSCode"           --1254
 inner join fproject.public.calizipincome c
 on s."Zip" = c."Zip" --359
 
---Create new final table
+/*
+Now we are preparing for exporting a final dataset to create visualizations for in PowerBi
+and in Python
+
+Performing the same join as above, selecting the columns that are of interest to us.
+We exported this as a csv file which we will see the visualiztions for
+*/
 create table fmerge as
 select s."CDSCode", ss."cname" , ss."dname", ss."sname", f."District Type",
 f."School Type", f."Low Grade", f."High Grade", f."Enrollment (K-12)", f."Free Meal Count (K-12)", f."Percent (%) Eligible Free (K-12)",
@@ -393,25 +482,28 @@ on ss."CDSCode" = s."CDSCode"
 inner join fproject.public.calizipincome c
 on s."Zip" = c."Zip"
 
+/*Taking a peek at our new table to ensure everything went as expected*/
 select count(*) from fproject.public.fmerge;
 select * from fmerge
 
---
-select count(*) from fproject.public.fmerge f  where "Percent (%) Eligible Free (K-12)"  is null
-select count(*) from fproject.public.fmerge f  where "Percent (%) Eligible FRPM (K-12)"  is null
-delete from fproject.public.fmerge f where "Percent (%) Eligible Free (K-12)" is null
-select count(*) from fproject.public.fmerge f  where "Percent (%) Eligible Free (K-12)"  is null
-select count(*) from fproject.public.fmerge f  where "Percent (%) Eligible FRPM (K-12)"  is null
 
---Add new columns for information we want to compute from the old ones
+/*
+We had columns for eligible for free and then eligible for free+reduced lunch
+
+We compute percentages for free, reduced and full price lunch individually
+
+Add new columns for information we want to compute from the old ones
+*/
 alter table fproject.public.fmerge add "FreeLunch" float
 alter table fproject.public.fmerge add "ReducedLunch" float
 alter table fproject.public.fmerge add "FullLunch" float
 
 update fproject.public.fmerge f set "FreeLunch" = "Percent (%) Eligible Free (K-12)"
 update fproject.public.fmerge f set "ReducedLunch" = "Percent (%) Eligible FRPM (K-12)" - "Percent (%) Eligible Free (K-12)"
-update fproject.public.fmerge f set "FullLunch" = 1-"Percent (%) Eligible FRPM (K-12)"
+update fproject.public.fmerge f set "FullLunch" = 1 - "Percent (%) Eligible FRPM (K-12)"
 
-
+/*Making sure free + reduced + full price lunch add up to 100%, since these cover all
+possibilites for lunch cost
+*/
 select coalesce ("FreeLunch",0) + coalesce ("ReducedLunch",0) + coalesce("FullLunch",0) from fmerge --check %'s add to 1
 
